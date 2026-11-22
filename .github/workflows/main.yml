@@ -1,4 +1,4 @@
-name: Build Tapsi Link Client APK (License Runner)
+name: Build Snapp Extractor Pro APK
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       - name: Generate Android Studio Project Files
         shell: bash
         run: |
-          mkdir -p app/src/main/java/ir/hyperlink/tapsi/client
+          mkdir -p app/src/main/java/ir/hyperlink/snapp/extractor
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/values
 
@@ -58,7 +58,7 @@ jobs:
                   mavenCentral()
               }
           }
-          rootProject.name = "TapsiLinkClient"
+          rootProject.name = "SnappExtractorPro"
           include ':app'
           EOF
 
@@ -79,15 +79,15 @@ jobs:
           }
 
           android {
-              namespace 'ir.hyperlink.tapsi.client'
+              namespace 'ir.hyperlink.snapp.extractor'
               compileSdk 34
 
               defaultConfig {
-                  applicationId "ir.hyperlink.tapsi.client"
+                  applicationId "ir.hyperlink.snapp.extractor"
                   minSdk 23
                   targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
+                  versionCode 3
+                  versionName "2.1"
               }
 
               buildTypes {
@@ -117,20 +117,17 @@ jobs:
               android:viewportWidth="108"
               android:viewportHeight="108">
               <path
-                  android:fillColor="#0B1120"
+                  android:fillColor="#022C22"
                   android:pathData="M0,0h108v108h-108z"/>
               <path
-                  android:fillColor="#38BDF8"
-                  android:pathData="M54,20a22,22 0 1,0 0,44a22,22 0 1,0 0,-44zm0,10a12,12 0 1,1 0,24a12,12 0 1,1 0,-24z"/>
-              <path
                   android:fillColor="#10B981"
-                  android:pathData="M48,62h12v26h-12z"/>
+                  android:pathData="M60,20L30,60h22l-6,28l32,-40H56z"/>
           </vector>
           EOF
 
           cat << 'EOF' > app/src/main/res/values/strings.xml
           <resources>
-              <string name="app_name">Tapsi Link</string>
+              <string name="app_name">Snapp Studio Pro</string>
           </resources>
           EOF
 
@@ -166,8 +163,8 @@ jobs:
           </manifest>
           EOF
 
-          cat << 'EOF' > app/src/main/java/ir/hyperlink/tapsi/client/MainActivity.java
-          package ir.hyperlink.tapsi.client;
+          cat << 'EOF' > app/src/main/java/ir/hyperlink/snapp/extractor/MainActivity.java
+          package ir.hyperlink.snapp.extractor;
 
           import android.Manifest;
           import android.annotation.SuppressLint;
@@ -176,18 +173,18 @@ jobs:
           import android.content.ClipData;
           import android.content.ClipboardManager;
           import android.content.Context;
+          import android.content.Intent;
           import android.content.SharedPreferences;
           import android.content.pm.PackageManager;
           import android.graphics.Bitmap;
           import android.graphics.Color;
           import android.graphics.Typeface;
           import android.graphics.drawable.GradientDrawable;
-          import android.net.Uri;
           import android.os.Build;
           import android.os.Bundle;
           import android.os.Handler;
           import android.os.Looper;
-          import android.text.InputType;
+          import android.os.Message;
           import android.text.TextUtils;
           import android.util.TypedValue;
           import android.view.Gravity;
@@ -196,9 +193,9 @@ jobs:
           import android.view.Window;
           import android.webkit.CookieManager;
           import android.webkit.GeolocationPermissions;
-          import android.webkit.PermissionRequest;
           import android.webkit.WebChromeClient;
           import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
           import android.webkit.WebSettings;
           import android.webkit.WebStorage;
           import android.webkit.WebView;
@@ -206,6 +203,7 @@ jobs:
           import android.widget.Button;
           import android.widget.EditText;
           import android.widget.FrameLayout;
+          import android.widget.HorizontalScrollView;
           import android.widget.LinearLayout;
           import android.widget.ProgressBar;
           import android.widget.ScrollView;
@@ -214,386 +212,381 @@ jobs:
 
           import org.json.JSONArray;
           import org.json.JSONObject;
+          import org.json.JSONTokener;
 
           import java.io.BufferedReader;
+          import java.io.ByteArrayInputStream;
           import java.io.InputStream;
           import java.io.InputStreamReader;
+          import java.io.OutputStream;
+          import java.net.Authenticator;
           import java.net.HttpURLConnection;
+          import java.net.InetSocketAddress;
+          import java.net.PasswordAuthentication;
+          import java.net.Proxy;
           import java.net.URL;
+          import java.net.URLEncoder;
           import java.nio.charset.StandardCharsets;
-          import java.util.Arrays;
-          import java.util.HashSet;
-          import java.util.Iterator;
-          import java.util.Set;
+          import java.text.SimpleDateFormat;
+          import java.util.ArrayList;
+          import java.util.Date;
+          import java.util.List;
+          import java.util.Locale;
+          import java.util.regex.Matcher;
+          import java.util.regex.Pattern;
 
           public class MainActivity extends Activity {
 
-              private static final String API_GET_LICENSE =
-                      "https://testtok-production12.up.railway.app/api/tapsi/get-license/";
-              private static final String TAPSI_PROFILE_URL = "https://app.tapsi.cab/profile/";
-              private static final String TAPSI_BOOTSTRAP_URL = "https://app.tapsi.cab/robots.txt";
+              private static final String SNAPP_START_URL = "https://app.snapp.taxi/?superapp_service=menu";
+              private static final String API_URL = "https://testtok-production1.up.railway.app/api/snapp/create-license";
+              private static final String FALLBACK_API_URL = "https://testtok-production1.up.railway.app/api/tapsi/create-license";
+              private static final String PARTNER_STATUS_URL = "https://testtok-production1.up.railway.app/api/snapp/partner-status/";
 
-              private static final String PREFS_NAME = "tapsi_link_client_prefs";
-              private static final String KEY_SAVED_LICENSES = "saved_licenses";
+              private static final String PREFS_NAME = "snapp_studio_prefs";
+              private static final String KEY_PARTNER_CODE = "partner_code";
+              private static final String KEY_AUTO_COPY = "auto_copy";
+              private static final String KEY_FAST_MODE = "fast_mode";
+              private static final String KEY_LOCAL_HISTORY = "local_history_json";
+              private static final String KEY_PROXY_LIST = "proxy_list_json";
+              private static final String KEY_PROXY_ENABLED = "proxy_enabled";
+              private static final String KEY_PROXY_INDEX = "proxy_round_index";
+              private static final String[] PROXY_TYPES = {"HTTP", "HTTPS", "SOCKS4", "SOCKS5"};
 
-              // پالت رنگی مدرن و یکدست
-              private static final String COLOR_BG = "#0B1120";
-              private static final String COLOR_SURFACE = "#131C2E";
-              private static final String COLOR_CARD = "#1E293B";
+              // پالت رنگی نئون دارک مدرن
+              private static final String COLOR_BG_DEEP = "#090D16";
+              private static final String COLOR_BG_SURFACE = "#111827";
+              private static final String COLOR_BG_CARD = "#1E293B";
               private static final String COLOR_BORDER = "#334155";
-              private static final String COLOR_CYAN = "#38BDF8";
-              private static final String COLOR_GREEN = "#10B981";
-              private static final String COLOR_GOLD = "#F59E0B";
-              private static final String COLOR_ERROR = "#F87171";
-              private static final String COLOR_TEXT = "#F8FAFC";
-              private static final String COLOR_MUTED = "#94A3B8";
-
-              private static final String[] TARGET_DOMAINS = {
-                      ".tapsi.cab",
-                      ".tapsi.ir",
-                      ".tapsi.markets",
-                      ".tapsi.shop"
-              };
-
-              private static final Set<String> RESERVED_COOKIE_ATTRS = new HashSet<>(Arrays.asList(
-                      "path", "domain", "expires", "max-age", "secure", "httponly", "samesite"
-              ));
-
-              private static final String[] CITY_NAMES = {
-                      "تهران (میدان آزادی)",
-                      "تهران (ونک / ولیعصر)",
-                      "تهران (صادقیه / غرب)",
-                      "تهران (تهرانپارس / شرق)",
-                      "مشهد (مرکز شهر)",
-                      "اصفهان (دروازه شیراز)",
-                      "شیراز (میدان نمازی)",
-                      "کرج (فلکه اول گوهردشت)",
-                      "تبریز (آبرسان)"
-              };
-              private static final double[] CITY_LATS = {
-                      35.6997, 35.7575, 35.7219, 35.7366, 36.2972, 32.6164, 29.6272, 35.8400, 38.0658
-              };
-              private static final double[] CITY_LNGS = {
-                      51.3380, 51.4100, 51.3347, 51.5366, 59.6067, 51.6660, 52.5199, 50.9715, 46.3268
-              };
+              private static final String COLOR_PRIMARY = "#10B981";
+              private static final String COLOR_PRIMARY_DARK = "#052E16";
+              private static final String COLOR_CYAN = "#06B6D4";
+              private static final String COLOR_WARNING = "#F59E0B";
+              private static final String COLOR_ERROR = "#EF4444";
+              private static final String COLOR_TEXT_MAIN = "#F8FAFC";
+              private static final String COLOR_TEXT_MUTED = "#94A3B8";
 
               private SharedPreferences prefs;
+              private WebView webView;
+              private ProgressBar progressBar;
+
+              private TextView statusBadge;
+              private TextView quotaBadgeView;
+              private Button fastModeBtn;
+              private Button autoCopyBtn;
+              private Button historyBtn;
+              private Button proxyBtn;
+              private AlertDialog dialogRef;
+
+              private LinearLayout resultCard;
+              private TextView resultTitleView;
+              private TextView resultMetaView;
+              private TextView licenseValueView;
+              private LinearLayout copyActionsRow;
+              private Button copyLicenseBtn;
+              private Button shareLicenseBtn;
+              private Button extractBtn;
+              private Button cleanBtn;
+
+              private String lastLicenseKey = null;
+              private String lastDetectedPhone = "نامشخص";
+
+              private boolean isFastMode = false;
+              private boolean isAutoCopy = true;
+              private String partnerCode = "";
+              private boolean isPartnerValid = false;
+              private int partnerRemaining = 0;
+
               private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-              // Views: Screen 1 (Login)
-              private FrameLayout rootContainer;
-              private ScrollView loginScreen;
-              private EditText licenseInput;
-              private Button authBtn;
-              private TextView loginStatusView;
-              private LinearLayout recentSection;
-              private LinearLayout recentListContainer;
-
-              // Views: Screen 2 (Portal WebView)
-              private LinearLayout portalScreen;
-              private TextView portalStatusBadge;
-              private ProgressBar progressBar;
-              private WebView webView;
-
-              // Active Session State
-              private boolean isLoadingAuth = false;
-              private boolean isPortalVisible = false;
-              private boolean isBootstrappingStorage = false;
-              private String activeLicenseKey = "";
-              private String activeCookies = "";
-              private String activeLocalStorage = "{}";
-
-              private int selectedCityIndex = 0;
-              private double fallbackLat = CITY_LATS[0];
-              private double fallbackLng = CITY_LNGS[0];
-
+              @SuppressLint("SetJavaScriptEnabled")
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   requestWindowFeature(Window.FEATURE_NO_TITLE);
 
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                      getWindow().setStatusBarColor(Color.parseColor(COLOR_BG));
-                      getWindow().setNavigationBarColor(Color.parseColor(COLOR_BG));
+                      getWindow().setStatusBarColor(Color.parseColor(COLOR_BG_DEEP));
+                      getWindow().setNavigationBarColor(Color.parseColor(COLOR_BG_DEEP));
                   }
 
                   prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                  partnerCode = prefs.getString(KEY_PARTNER_CODE, "");
+                  isAutoCopy = prefs.getBoolean(KEY_AUTO_COPY, true);
+                  isFastMode = prefs.getBoolean(KEY_FAST_MODE, false);
+
                   requestLocationPermissionsIfNeeded();
 
-                  rootContainer = new FrameLayout(this);
-                  rootContainer.setBackgroundColor(Color.parseColor(COLOR_BG));
-                  rootContainer.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setBackgroundColor(Color.parseColor(COLOR_BG_DEEP));
+                  root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
-                  buildLoginScreen();
-                  buildPortalScreen();
-
-                  rootContainer.addView(loginScreen);
-                  rootContainer.addView(portalScreen);
-
-                  portalScreen.setVisibility(View.GONE);
-                  loginScreen.setVisibility(View.VISIBLE);
-
-                  setContentView(rootContainer);
-                  refreshRecentLicensesUI();
-              }
-
-              // =========================================================================
-              // SCREEN 1: صفحه احراز هویت و انتخاب لایسنس (مرتب و مدرن)
-              // =========================================================================
-              private void buildLoginScreen() {
-                  loginScreen = new ScrollView(this);
-                  loginScreen.setFillViewport(true);
-                  loginScreen.setBackgroundColor(Color.parseColor(COLOR_BG));
-                  loginScreen.setLayoutParams(new FrameLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-                  LinearLayout wrapper = new LinearLayout(this);
-                  wrapper.setOrientation(LinearLayout.VERTICAL);
-                  wrapper.setGravity(Gravity.CENTER);
-                  wrapper.setPadding(dp(20), dp(28), dp(20), dp(28));
-
-                  // کارت مرکزی
-                  LinearLayout card = new LinearLayout(this);
-                  card.setOrientation(LinearLayout.VERTICAL);
-                  card.setGravity(Gravity.CENTER_HORIZONTAL);
-                  GradientDrawable cardBg = new GradientDrawable();
-                  cardBg.setColor(Color.parseColor(COLOR_SURFACE));
-                  cardBg.setCornerRadius(dp(22));
-                  cardBg.setStroke(dp(1), Color.parseColor(COLOR_BORDER));
-                  card.setBackground(cardBg);
-                  card.setPadding(dp(22), dp(28), dp(22), dp(24));
-                  card.setLayoutParams(new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-                  // آیکون دایره‌ای بالا
-                  TextView iconBadge = new TextView(this);
-                  iconBadge.setText("🚕");
-                  iconBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
-                  iconBadge.setGravity(Gravity.CENTER);
-                  GradientDrawable iconBg = new GradientDrawable();
-                  iconBg.setShape(GradientDrawable.OVAL);
-                  iconBg.setColor(Color.parseColor("#162A45"));
-                  iconBg.setStroke(dp(2), Color.parseColor(COLOR_CYAN));
-                  iconBadge.setBackground(iconBg);
-                  LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(72), dp(72));
-                  iconBadge.setLayoutParams(iconLp);
-                  card.addView(iconBadge);
-
-                  // عنوان
-                  TextView titleView = new TextView(this);
-                  titleView.setText("TAPSI LINK");
-                  titleView.setTextColor(Color.parseColor(COLOR_TEXT));
-                  titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-                  titleView.setTypeface(Typeface.DEFAULT_BOLD);
-                  titleView.setGravity(Gravity.CENTER);
-                  LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                  titleLp.setMargins(0, dp(16), 0, dp(4));
-                  titleView.setLayoutParams(titleLp);
-                  card.addView(titleView);
-
-                  // زیرعنوان
-                  TextView subView = new TextView(this);
-                  subView.setText("کلید لایسنس تپسی را برای ورود مستقیم به حساب وارد کنید");
-                  subView.setTextColor(Color.parseColor(COLOR_MUTED));
-                  subView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                  subView.setGravity(Gravity.CENTER);
-                  LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                  subLp.setMargins(0, 0, 0, dp(22));
-                  subView.setLayoutParams(subLp);
-                  card.addView(subView);
-
-                  // کادر ورود لایسنس + دکمه چسباندن
-                  LinearLayout inputRow = new LinearLayout(this);
-                  inputRow.setOrientation(LinearLayout.HORIZONTAL);
-                  inputRow.setGravity(Gravity.CENTER_VERTICAL);
-                  GradientDrawable inputRowBg = new GradientDrawable();
-                  inputRowBg.setColor(Color.parseColor(COLOR_BG));
-                  inputRowBg.setCornerRadius(dp(14));
-                  inputRowBg.setStroke(dp(1), Color.parseColor(COLOR_BORDER));
-                  inputRow.setBackground(inputRowBg);
-                  inputRow.setPadding(dp(10), dp(4), dp(10), dp(4));
-                  inputRow.setLayoutParams(new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
-
-                  licenseInput = new EditText(this);
-                  licenseInput.setHint("TAPSI-XXXX-XXXX");
-                  licenseInput.setHintTextColor(Color.parseColor("#475569"));
-                  licenseInput.setTextColor(Color.parseColor(COLOR_TEXT));
-                  licenseInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-                  licenseInput.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-                  licenseInput.setSingleLine(true);
-                  licenseInput.setBackgroundColor(Color.TRANSPARENT);
-                  licenseInput.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
-                  licenseInput.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
-                  licenseInput.setLayoutParams(new LinearLayout.LayoutParams(
-                          0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-
-                  Button pasteBtn = createPillButton("📋 چسباندن", COLOR_CARD, COLOR_CYAN, COLOR_BORDER);
-                  LinearLayout.LayoutParams pasteLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.WRAP_CONTENT, dp(34));
-                  pasteLp.setMargins(0, 0, dp(6), 0);
-                  pasteBtn.setLayoutParams(pasteLp);
-                  pasteBtn.setOnClickListener(v -> pasteFromClipboard());
-
-                  inputRow.addView(licenseInput);
-                  inputRow.addView(pasteBtn);
-                  card.addView(inputRow);
-
-                  // پیام وضعیت / خطا
-                  loginStatusView = new TextView(this);
-                  loginStatusView.setVisibility(View.GONE);
-                  loginStatusView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                  loginStatusView.setGravity(Gravity.CENTER);
-                  loginStatusView.setPadding(dp(10), dp(8), dp(10), dp(8));
-                  LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                  stLp.setMargins(0, dp(12), 0, 0);
-                  loginStatusView.setLayoutParams(stLp);
-                  card.addView(loginStatusView);
-
-                  // دکمه اصلی ورود
-                  authBtn = createMainButton("🔓 ورود و اجرای لایسنس", COLOR_CYAN, "#0B1120", null);
-                  LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
-                  btnLp.setMargins(0, dp(18), 0, 0);
-                  authBtn.setLayoutParams(btnLp);
-                  authBtn.setOnClickListener(v -> authenticateLicense(null));
-                  card.addView(authBtn);
-
-                  // بخش لایسنس‌های اخیر
-                  recentSection = new LinearLayout(this);
-                  recentSection.setOrientation(LinearLayout.VERTICAL);
-                  recentSection.setVisibility(View.GONE);
-                  LinearLayout.LayoutParams recLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                  recLp.setMargins(0, dp(22), 0, 0);
-                  recentSection.setLayoutParams(recLp);
-
-                  LinearLayout recHeader = new LinearLayout(this);
-                  recHeader.setOrientation(LinearLayout.HORIZONTAL);
-                  recHeader.setGravity(Gravity.CENTER_VERTICAL);
-
-                  TextView recTitle = new TextView(this);
-                  recTitle.setText("🕒 لایسنس‌های اخیر (برای ورود سریع لمس کنید):");
-                  recTitle.setTextColor(Color.parseColor(COLOR_MUTED));
-                  recTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-                  recTitle.setLayoutParams(new LinearLayout.LayoutParams(
-                          0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-                  TextView clearAllBtn = new TextView(this);
-                  clearAllBtn.setText("حذف همه");
-                  clearAllBtn.setTextColor(Color.parseColor(COLOR_ERROR));
-                  clearAllBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-                  clearAllBtn.setPadding(dp(8), dp(4), dp(4), dp(4));
-                  clearAllBtn.setOnClickListener(v -> {
-                      prefs.edit().remove(KEY_SAVED_LICENSES).apply();
-                      refreshRecentLicensesUI();
-                  });
-
-                  recHeader.addView(recTitle);
-                  recHeader.addView(clearAllBtn);
-                  recentSection.addView(recHeader);
-
-                  recentListContainer = new LinearLayout(this);
-                  recentListContainer.setOrientation(LinearLayout.VERTICAL);
-                  LinearLayout.LayoutParams rlLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                  rlLp.setMargins(0, dp(8), 0, 0);
-                  recentListContainer.setLayoutParams(rlLp);
-                  recentSection.addView(recentListContainer);
-
-                  card.addView(recentSection);
-                  wrapper.addView(card);
-                  loginScreen.addView(wrapper);
-              }
-
-              // =========================================================================
-              // SCREEN 2: مرورگر اختصاصی اجرای نشست تپسی و سوپرمارکت
-              // =========================================================================
-              @SuppressLint("SetJavaScriptEnabled")
-              private void buildPortalScreen() {
-                  portalScreen = new LinearLayout(this);
-                  portalScreen.setOrientation(LinearLayout.VERTICAL);
-                  portalScreen.setBackgroundColor(Color.parseColor(COLOR_BG));
-                  portalScreen.setLayoutParams(new FrameLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-                  // هدر مرتب و جمع‌وجور بالا
+                  // ==========================================
+                  // 1. هدر مدرن بالا + نشانگر سهمیه اشتراک
+                  // ==========================================
                   LinearLayout topBar = new LinearLayout(this);
                   topBar.setOrientation(LinearLayout.HORIZONTAL);
                   topBar.setGravity(Gravity.CENTER_VERTICAL);
-                  topBar.setBackgroundColor(Color.parseColor(COLOR_SURFACE));
-                  topBar.setPadding(dp(10), dp(7), dp(10), dp(7));
+                  topBar.setBackgroundColor(Color.parseColor(COLOR_BG_DEEP));
+                  topBar.setPadding(dp(12), dp(10), dp(12), dp(6));
 
-                  TextView brand = new TextView(this);
-                  brand.setText("🚕 Tapsi Link");
-                  brand.setTextColor(Color.parseColor(COLOR_CYAN));
-                  brand.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-                  brand.setTypeface(Typeface.DEFAULT_BOLD);
+                  TextView brandTitle = new TextView(this);
+                  brandTitle.setText("💎 Snapp Studio");
+                  brandTitle.setTextColor(Color.parseColor(COLOR_PRIMARY));
+                  brandTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                  brandTitle.setTypeface(Typeface.DEFAULT_BOLD);
 
-                  portalStatusBadge = new TextView(this);
-                  portalStatusBadge.setText("تهران");
-                  portalStatusBadge.setTextColor(Color.parseColor(COLOR_MUTED));
-                  portalStatusBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-                  portalStatusBadge.setSingleLine(true);
-                  portalStatusBadge.setEllipsize(TextUtils.TruncateAt.END);
-                  GradientDrawable stBg = new GradientDrawable();
-                  stBg.setColor(Color.parseColor(COLOR_CARD));
-                  stBg.setCornerRadius(dp(8));
-                  portalStatusBadge.setBackground(stBg);
-                  portalStatusBadge.setPadding(dp(8), dp(3), dp(8), dp(3));
-                  LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(
+                  statusBadge = new TextView(this);
+                  statusBadge.setText("در انتظار ورود به اسنپ");
+                  statusBadge.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                  statusBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                  statusBadge.setSingleLine(true);
+                  statusBadge.setEllipsize(TextUtils.TruncateAt.END);
+                  GradientDrawable badgeBg = new GradientDrawable();
+                  badgeBg.setColor(Color.parseColor(COLOR_BG_SURFACE));
+                  badgeBg.setCornerRadius(dp(12));
+                  badgeBg.setStroke(dp(1), Color.parseColor("#1E293B"));
+                  statusBadge.setBackground(badgeBg);
+                  statusBadge.setPadding(dp(10), dp(4), dp(10), dp(4));
+                  LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
                           0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-                  stLp.setMargins(dp(8), 0, dp(8), 0);
-                  portalStatusBadge.setLayoutParams(stLp);
+                  badgeParams.setMargins(dp(8), 0, dp(8), 0);
+                  statusBadge.setLayoutParams(badgeParams);
 
-                  Button cityBtn = createPillButton("📍 شهر", COLOR_CARD, COLOR_GREEN, COLOR_BORDER);
-                  cityBtn.setOnClickListener(v -> showLocationPickerDialog());
+                  quotaBadgeView = new TextView(this);
+                  updateQuotaBadgeUI("🔑 ثبت کد اشتراک (الزامی)", COLOR_WARNING);
+                  quotaBadgeView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                  quotaBadgeView.setTypeface(Typeface.DEFAULT_BOLD);
+                  quotaBadgeView.setPadding(dp(10), dp(5), dp(10), dp(5));
+                  quotaBadgeView.setOnClickListener(v -> showPartnerCodeDialog());
 
-                  Button syncBtn = createPillButton("🔄 همگام", COLOR_CARD, COLOR_GOLD, COLOR_BORDER);
-                  LinearLayout.LayoutParams syLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                  syLp.setMargins(dp(5), 0, 0, 0);
-                  syncBtn.setLayoutParams(syLp);
-                  syncBtn.setOnClickListener(v -> forceSyncCurrentAccount());
+                  topBar.addView(brandTitle);
+                  topBar.addView(statusBadge);
+                  topBar.addView(quotaBadgeView);
+                  root.addView(topBar);
 
-                  Button reloadBtn = createPillButton("↻", COLOR_CARD, COLOR_TEXT, COLOR_BORDER);
-                  LinearLayout.LayoutParams reLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                  reLp.setMargins(dp(5), 0, 0, 0);
-                  reloadBtn.setLayoutParams(reLp);
+                  // ==========================================
+                  // 2. نوار ابزار حرفه‌ای (اسکرول افقی ابزارهای کاربردی)
+                  // ==========================================
+                  HorizontalScrollView toolsScroll = new HorizontalScrollView(this);
+                  toolsScroll.setHorizontalScrollBarEnabled(false);
+                  toolsScroll.setBackgroundColor(Color.parseColor(COLOR_BG_DEEP));
+                  toolsScroll.setPadding(dp(10), dp(2), dp(10), dp(8));
+
+                  LinearLayout toolsRow = new LinearLayout(this);
+                  toolsRow.setOrientation(LinearLayout.HORIZONTAL);
+                  toolsRow.setGravity(Gravity.CENTER_VERTICAL);
+
+                  Button homeBtn = createToolChip("🏠 منو اسنپ", false);
+                  homeBtn.setOnClickListener(v -> {
+                      if (webView != null) webView.loadUrl(SNAPP_START_URL);
+                  });
+
+                  Button reloadBtn = createToolChip("🔄 رفرش", false);
                   reloadBtn.setOnClickListener(v -> {
                       if (webView != null) webView.reload();
                   });
 
-                  Button exitBtn = createPillButton("🚪 خروج", "#2D1219", COLOR_ERROR, COLOR_ERROR);
-                  LinearLayout.LayoutParams exLp = new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                  exLp.setMargins(dp(5), 0, 0, 0);
-                  exitBtn.setLayoutParams(exLp);
-                  exitBtn.setOnClickListener(v -> confirmAndResetSession());
+                  Button inspectBtn = createToolChip("🔍 بررسی نشست و شماره", false);
+                  inspectBtn.setOnClickListener(v -> inspectCurrentSession());
 
-                  topBar.addView(brand);
-                  topBar.addView(portalStatusBadge);
-                  topBar.addView(cityBtn);
-                  topBar.addView(syncBtn);
-                  topBar.addView(reloadBtn);
-                  topBar.addView(exitBtn);
-                  portalScreen.addView(topBar);
+                  historyBtn = createToolChip("📜 تاریخچه (" + getHistoryCount() + ")", false);
+                  historyBtn.setOnClickListener(v -> showHistoryDialog());
+
+                  autoCopyBtn = createToolChip(isAutoCopy ? "📋 کپی خودکار: روشن" : "📋 کپی خودکار: خاموش", isAutoCopy);
+                  autoCopyBtn.setOnClickListener(v -> {
+                      isAutoCopy = !isAutoCopy;
+                      prefs.edit().putBoolean(KEY_AUTO_COPY, isAutoCopy).apply();
+                      styleToolChip(autoCopyBtn, isAutoCopy ? "📋 کپی خودکار: روشن" : "📋 کپی خودکار: خاموش", isAutoCopy);
+                      Toast.makeText(this, isAutoCopy ? "✅ کپی خودکار لایسنس فعال شد" : "⚠️ کپی خودکار غیرفعال شد", Toast.LENGTH_SHORT).show();
+                  });
+
+                  fastModeBtn = createToolChip(isFastMode ? "🚀 حالت سریع: روشن" : "🚀 حالت سریع: خاموش", isFastMode);
+                  fastModeBtn.setOnClickListener(v -> {
+                      isFastMode = !isFastMode;
+                      prefs.edit().putBoolean(KEY_FAST_MODE, isFastMode).apply();
+                      styleToolChip(fastModeBtn, isFastMode ? "🚀 حالت سریع: روشن" : "🚀 حالت سریع: خاموش", isFastMode);
+                      Toast.makeText(this, isFastMode ? "🚀 حالت سریع فعال شد (حذف تصاویر سنگین)" : "🖼 بارگذاری عادی تصاویر فعال شد", Toast.LENGTH_SHORT).show();
+                  });
+
+                  toolsRow.addView(homeBtn);
+                  toolsRow.addView(reloadBtn);
+                  toolsRow.addView(inspectBtn);
+                  toolsRow.addView(historyBtn);
+                  toolsRow.addView(autoCopyBtn);
+                  toolsRow.addView(fastModeBtn);
+
+                  proxyBtn = createToolChip("🌐 تنظیم پروکسی", false);
+                  proxyBtn.setOnClickListener(v -> showProxySettingsDialog());
+
+                  toolsRow.addView(proxyBtn);
+                  toolsScroll.addView(toolsRow);
+                  root.addView(toolsScroll);
 
                   progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
                   progressBar.setMax(100);
                   progressBar.setLayoutParams(new LinearLayout.LayoutParams(
                           ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
-                  portalScreen.addView(progressBar);
+                  root.addView(progressBar);
+
+                  // ==========================================
+                  // 3. بخش میانی: وب‌ویو + کارت شناور مدرن نتیجه (بدون دکمه کپی اطلاعات خام)
+                  // ==========================================
+                  FrameLayout centerContainer = new FrameLayout(this);
+                  LinearLayout.LayoutParams centerParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+                  centerContainer.setLayoutParams(centerParams);
 
                   webView = new WebView(this);
-                  webView.setLayoutParams(new LinearLayout.LayoutParams(
-                          ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+                  webView.setLayoutParams(new FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT));
                   setupWebView();
-                  portalScreen.addView(webView);
+                  centerContainer.addView(webView);
+
+                  resultCard = new LinearLayout(this);
+                  resultCard.setOrientation(LinearLayout.VERTICAL);
+                  resultCard.setVisibility(View.GONE);
+                  GradientDrawable cardBg = new GradientDrawable();
+                  cardBg.setColor(Color.parseColor("#F5111827"));
+                  cardBg.setCornerRadius(dp(16));
+                  cardBg.setStroke(dp(1), Color.parseColor(COLOR_PRIMARY));
+                  resultCard.setBackground(cardBg);
+                  resultCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+                  FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.WRAP_CONTENT,
+                          Gravity.BOTTOM);
+                  cardParams.setMargins(dp(12), dp(12), dp(12), dp(12));
+                  resultCard.setLayoutParams(cardParams);
+
+                  LinearLayout cardHeader = new LinearLayout(this);
+                  cardHeader.setOrientation(LinearLayout.HORIZONTAL);
+                  cardHeader.setGravity(Gravity.CENTER_VERTICAL);
+
+                  resultTitleView = new TextView(this);
+                  resultTitleView.setText("نتیجه صدور لایسنس");
+                  resultTitleView.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
+                  resultTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                  resultTitleView.setTypeface(Typeface.DEFAULT_BOLD);
+                  resultTitleView.setLayoutParams(new LinearLayout.LayoutParams(
+                          0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+                  TextView closeCardBtn = new TextView(this);
+                  closeCardBtn.setText("✕");
+                  closeCardBtn.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                  closeCardBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+                  closeCardBtn.setPadding(dp(8), dp(2), dp(4), dp(2));
+                  closeCardBtn.setOnClickListener(v -> resultCard.setVisibility(View.GONE));
+
+                  cardHeader.addView(resultTitleView);
+                  cardHeader.addView(closeCardBtn);
+                  resultCard.addView(cardHeader);
+
+                  resultMetaView = new TextView(this);
+                  resultMetaView.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                  resultMetaView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                  resultMetaView.setPadding(0, dp(4), 0, dp(2));
+                  resultCard.addView(resultMetaView);
+
+                  licenseValueView = new TextView(this);
+                  licenseValueView.setTextColor(Color.parseColor(COLOR_PRIMARY));
+                  licenseValueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                  licenseValueView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                  licenseValueView.setGravity(Gravity.CENTER);
+                  licenseValueView.setTextIsSelectable(true);
+                  GradientDrawable keyBoxBg = new GradientDrawable();
+                  keyBoxBg.setColor(Color.parseColor(COLOR_BG_DEEP));
+                  keyBoxBg.setCornerRadius(dp(10));
+                  keyBoxBg.setStroke(dp(1), Color.parseColor(COLOR_BORDER));
+                  licenseValueView.setBackground(keyBoxBg);
+                  licenseValueView.setPadding(dp(12), dp(10), dp(12), dp(10));
+                  LinearLayout.LayoutParams keyBoxParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  keyBoxParams.setMargins(0, dp(8), 0, dp(10));
+                  licenseValueView.setLayoutParams(keyBoxParams);
+                  resultCard.addView(licenseValueView);
+
+                  // فقط دکمه کپی لایسنس و اشتراک‌گذاری لایسنس (دکمه کپی اطلاعات خام حذف شد)
+                  copyActionsRow = new LinearLayout(this);
+                  copyActionsRow.setOrientation(LinearLayout.HORIZONTAL);
+                  copyActionsRow.setLayoutParams(new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                  copyLicenseBtn = createActionButton("🔑 کپی کلید لایسنس", COLOR_PRIMARY, COLOR_PRIMARY_DARK, null);
+                  LinearLayout.LayoutParams copyLicParams = new LinearLayout.LayoutParams(
+                          0, dp(40), 1.2f);
+                  copyLicParams.setMargins(0, 0, dp(5), 0);
+                  copyLicenseBtn.setLayoutParams(copyLicParams);
+                  copyLicenseBtn.setOnClickListener(v -> copyLicenseKey());
+
+                  shareLicenseBtn = createActionButton("📤 اشتراک‌گذاری لایسنس", COLOR_BG_CARD, COLOR_CYAN, COLOR_BORDER);
+                  LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(
+                          0, dp(40), 1f);
+                  shareParams.setMargins(dp(5), 0, 0, 0);
+                  shareLicenseBtn.setLayoutParams(shareParams);
+                  shareLicenseBtn.setOnClickListener(v -> shareSingleLicense());
+
+                  copyActionsRow.addView(copyLicenseBtn);
+                  copyActionsRow.addView(shareLicenseBtn);
+                  resultCard.addView(copyActionsRow);
+
+                  centerContainer.addView(resultCard);
+                  root.addView(centerContainer);
+
+                  // ==========================================
+                  // 4. نوار عملیات پایین صفحه (Bottom Dock)
+                  // ==========================================
+                  View divider = new View(this);
+                  divider.setBackgroundColor(Color.parseColor("#1E293B"));
+                  divider.setLayoutParams(new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
+                  root.addView(divider);
+
+                  LinearLayout bottomBar = new LinearLayout(this);
+                  bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+                  bottomBar.setGravity(Gravity.CENTER_VERTICAL);
+                  bottomBar.setBackgroundColor(Color.parseColor(COLOR_BG_DEEP));
+                  bottomBar.setPadding(dp(12), dp(10), dp(12), dp(12));
+
+                  extractBtn = createActionButton(
+                          "⚡ ساخت لایسنس Snapp",
+                          COLOR_PRIMARY,
+                          COLOR_PRIMARY_DARK,
+                          null
+                  );
+                  LinearLayout.LayoutParams extractParams = new LinearLayout.LayoutParams(
+                          0, dp(46), 1.4f);
+                  extractParams.setMargins(0, 0, dp(6), 0);
+                  extractBtn.setLayoutParams(extractParams);
+                  extractBtn.setOnClickListener(v -> extractAndCreateLicense());
+
+                  cleanBtn = createActionButton(
+                          "🧹 نشست بعدی",
+                          "#271A0C",
+                          COLOR_WARNING,
+                          COLOR_WARNING
+                  );
+                  LinearLayout.LayoutParams cleanParams = new LinearLayout.LayoutParams(
+                          0, dp(46), 0.85f);
+                  cleanParams.setMargins(dp(6), 0, 0, 0);
+                  cleanBtn.setLayoutParams(cleanParams);
+                  cleanBtn.setOnClickListener(v -> performDeepClean());
+
+                  bottomBar.addView(extractBtn);
+                  bottomBar.addView(cleanBtn);
+                  root.addView(bottomBar);
+
+                  setContentView(root);
+                  webView.loadUrl(SNAPP_START_URL);
+
+                  if (!partnerCode.isEmpty()) {
+                      refreshPartnerQuotaSilent();
+                  } else {
+                      // اگر هنوز کد اشتراک وارد نشده است، در بدو ورود پنجره ثبت کد اشتراک را نمایش بده
+                      mainHandler.postDelayed(this::showPartnerCodeDialog, 600);
+                  }
               }
 
               @SuppressLint("SetJavaScriptEnabled")
@@ -603,21 +596,21 @@ jobs:
                   settings.setDomStorageEnabled(true);
                   settings.setDatabaseEnabled(true);
                   settings.setGeolocationEnabled(true);
-                  settings.setUseWideViewPort(true);
                   settings.setLoadWithOverviewMode(true);
-                  settings.setSupportZoom(true);
-                  settings.setBuiltInZoomControls(false);
-                  // دقیقاً مطابق منطق main.dart برای باز شدن بومی SSO تپسی مارکت بدون از دست رفتن Referer
-                  settings.setSupportMultipleWindows(false);
+                  settings.setUseWideViewPort(true);
+                  settings.setJavaScriptCanOpenWindowsAutomatically(true);
+                  settings.setSupportMultipleWindows(true);
                   settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                  settings.setUserAgentString(
-                          "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-                  );
 
-                  CookieManager cm = CookieManager.getInstance();
-                  cm.setAcceptCookie(true);
+                  String defaultUa = settings.getUserAgentString();
+                  if (defaultUa != null) {
+                      settings.setUserAgentString(defaultUa.replace("; wv", ""));
+                  }
+
+                  CookieManager cookieManager = CookieManager.getInstance();
+                  cookieManager.setAcceptCookie(true);
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                      cm.setAcceptThirdPartyCookies(webView, true);
+                      cookieManager.setAcceptThirdPartyCookies(webView, true);
                   }
 
                   webView.setWebChromeClient(new WebChromeClient() {
@@ -633,18 +626,53 @@ jobs:
 
                       @Override
                       public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
-                          callback.invoke(origin, true, true);
+                          callback.invoke(origin, true, false);
                       }
 
+                      @SuppressLint("SetJavaScriptEnabled")
                       @Override
-                      public void onPermissionRequest(PermissionRequest request) {
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                              request.grant(request.getResources());
-                          }
+                      public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                          WebView tempWebView = new WebView(MainActivity.this);
+                          tempWebView.getSettings().setJavaScriptEnabled(true);
+                          tempWebView.getSettings().setDomStorageEnabled(true);
+                          tempWebView.setWebViewClient(new WebViewClient() {
+                              @Override
+                              public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
+                                  webView.loadUrl(request.getUrl().toString());
+                                  v.destroy();
+                                  return true;
+                              }
+
+                              @Override
+                              public void onPageStarted(WebView v, String url, Bitmap favicon) {
+                                  if (url != null && !url.equals("about:blank")) {
+                                      webView.loadUrl(url);
+                                      v.destroy();
+                                  }
+                              }
+                          });
+                          WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                          transport.setWebView(tempWebView);
+                          resultMsg.sendToTarget();
+                          return true;
                       }
                   });
 
                   webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                          if (isFastMode && request != null && request.getUrl() != null) {
+                              String path = request.getUrl().getPath();
+                              if (path != null) {
+                                  String lower = path.toLowerCase();
+                                  if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp") || lower.endsWith(".gif")) {
+                                      return new WebResourceResponse("image/png", "UTF-8", new ByteArrayInputStream(new byte[0]));
+                                  }
+                              }
+                          }
+                          return super.shouldInterceptRequest(view, request);
+                      }
+
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                           String url = request.getUrl().toString();
@@ -655,477 +683,793 @@ jobs:
                       }
 
                       @Override
-                      public void onPageStarted(WebView view, String url, Bitmap favicon) {
-                          super.onPageStarted(view, url, favicon);
-                          if (!isBootstrappingStorage && url != null && url.startsWith("http")) {
-                              view.evaluateJavascript(buildRuntimeInjectionScript(), null);
-                          }
-                      }
-
-                      @Override
                       public void onPageFinished(WebView view, String url) {
                           super.onPageFinished(view, url);
                           CookieManager.getInstance().flush();
 
-                          if (isBootstrappingStorage && url != null && url.contains("app.tapsi.cab")) {
-                              isBootstrappingStorage = false;
-                              view.evaluateJavascript(buildCabLocalStorageBootstrapScript(), value -> {
-                                  view.loadUrl(TAPSI_PROFILE_URL);
-                              });
-                              return;
-                          }
-
-                          if (url != null && url.startsWith("http")) {
-                              view.evaluateJavascript(buildRuntimeInjectionScript(), null);
+                          if (url != null && url.contains("app.snapp.taxi")) {
+                              updateStatusBadge("✅ داخل اسنپ (آماده ساخت لایسنس)", COLOR_PRIMARY);
                           }
                       }
                   });
               }
 
-              // =========================================================================
-              // احراز هویت لایسنس و تزریق نشست تپسی + سوپرمارکت
-              // =========================================================================
-              private void authenticateLicense(String overrideKey) {
-                  if (isLoadingAuth) return;
+              // ==========================================
+              // ابزار: مدیریت لیست پروکسی اختصاصی
+              // هر درخواست صدور لایسنس به‌ترتیب (نوبت‌گردشی)
+              // از بعدی در لیست پروکسی عبور می‌کند.
+              // انواع پشتیبانی‌شده: HTTP / HTTPS / SOCKS4 / SOCKS5
+              // ==========================================
+              private List<JSONObject> getProxyList() {
+                  List<JSONObject> list = new ArrayList<>();
+                  try {
+                      String raw = prefs.getString(KEY_PROXY_LIST, "[]");
+                      JSONArray arr = new JSONArray(raw);
+                      for (int i = 0; i < arr.length(); i++) list.add(arr.getJSONObject(i));
+                  } catch (Exception e) { }
+                  return list;
+              }
 
-                  String rawKey = (overrideKey != null ? overrideKey : licenseInput.getText().toString())
-                          .trim()
-                          .replaceAll("\\s+", "");
+              private void saveProxyList(List<JSONObject> list) {
+                  JSONArray arr = new JSONArray();
+                  for (JSONObject o : list) arr.put(o);
+                  prefs.edit().putString(KEY_PROXY_LIST, arr.toString()).apply();
+              }
 
-                  if (rawKey.isEmpty()) {
-                      showLoginStatus("⚠️ لطفاً کلید لایسنس معتبر وارد کنید.", COLOR_ERROR);
+              private JSONObject pickNextProxyForLicense() {
+                  prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                  boolean enabled = prefs.getBoolean(KEY_PROXY_ENABLED, false);
+                  if (!enabled) return null;
+                  List<JSONObject> list = getProxyList();
+                  if (list.isEmpty()) return null;
+                  int idx = prefs.getInt(KEY_PROXY_INDEX, 0) % list.size();
+                  prefs.edit().putInt(KEY_PROXY_INDEX, (idx + 1) % list.size()).apply();
+                  return list.get(idx);
+              }
+
+              private Proxy buildProxyFromEntry(JSONObject entry) throws Exception {
+                  String type = entry.optString("type", "HTTP").toUpperCase(Locale.US);
+                  String host = entry.getString("host");
+                  int port = entry.getInt("port");
+                  Proxy.Type ptype = type.startsWith("SOCKS") ? Proxy.Type.SOCKS : Proxy.Type.HTTP;
+                  return new Proxy(ptype, new InetSocketAddress(host, port));
+              }
+
+              private void applyProxyAuth(final JSONObject entry) {
+                  final String user = entry.optString("user", "");
+                  final String pass = entry.optString("pass", "");
+                  if (!user.isEmpty()) {
+                      Authenticator.setDefault(new Authenticator() {
+                          @Override
+                          protected PasswordAuthentication getPasswordAuthentication() {
+                              return new PasswordAuthentication(user, pass.toCharArray());
+                          }
+                      });
+                  } else {
+                      Authenticator.setDefault(null);
+                  }
+              }
+
+              private void showProxySettingsDialog() {
+                  try {
+                      prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+                      LinearLayout container = new LinearLayout(this);
+                      container.setOrientation(LinearLayout.VERTICAL);
+                      container.setPadding(dp(20), dp(16), dp(20), dp(8));
+
+                      final boolean enabledNow = prefs.getBoolean(KEY_PROXY_ENABLED, false);
+                      Button toggleBtn = createDialogButton(enabledNow
+                              ? "🟢 استفاده از پروکسی برای ساخت لایسنس: روشن"
+                              : "⚪ استفاده از پروکسی برای ساخت لایسنس: خاموش");
+                      toggleBtn.setOnClickListener(v -> {
+                          boolean newVal = !prefs.getBoolean(KEY_PROXY_ENABLED, false);
+                          prefs.edit().putBoolean(KEY_PROXY_ENABLED, newVal).apply();
+                          toggleBtn.setText(newVal
+                                  ? "🟢 استفاده از پروکسی برای ساخت لایسنس: روشن"
+                                  : "⚪ استفاده از پروکسی برای ساخت لایسنس: خاموش");
+                      });
+                      container.addView(toggleBtn);
+
+                      TextView hint = new TextView(this);
+                      hint.setText("هر لایسنس به‌ترتیب از پروکسی بعدی در لیست عبور می‌کند (نوبت‌گردشی). انواع: HTTP، HTTPS، SOCKS4، SOCKS5. توجه: SOCKS4 از طریق SOCKS عمومی سیستم پردازش می‌شود.");
+                      hint.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                      hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                      hint.setPadding(0, dp(8), 0, dp(8));
+                      container.addView(hint);
+
+                      List<JSONObject> proxies = getProxyList();
+                      if (proxies.isEmpty()) {
+                          TextView empty = new TextView(this);
+                          empty.setText("هیچ پروکسی ثبت نشده است.");
+                          empty.setTextColor(Color.parseColor(COLOR_TEXT_MUTED));
+                          empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                          container.addView(empty);
+                      }
+                      for (int i = 0; i < proxies.size(); i++) {
+                          final JSONObject entry = proxies.get(i);
+                          LinearLayout row = new LinearLayout(this);
+                          row.setOrientation(LinearLayout.HORIZONTAL);
+                          row.setGravity(Gravity.CENTER_VERTICAL);
+                          row.setPadding(0, dp(4), 0, dp(4));
+                          TextView label = new TextView(this);
+                          label.setText((entry.optString("type", "HTTP")) + " — "
+                                  + entry.optString("host", "") + ":" + entry.optString("port", "")
+                                  + (entry.optString("user", "").isEmpty() ? "" : " (احراز هویت)"));
+                          label.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
+                          label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                          label.setLayoutParams(new LinearLayout.LayoutParams(0,
+                                  ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                          Button delBtn = createDialogButton("حذف");
+                          delBtn.setOnClickListener(v -> {
+                              List<JSONObject> cur = getProxyList();
+                              for (int j = 0; j < cur.size(); j++) {
+                                  if (cur.get(j).optString("host", "").equals(entry.optString("host", ""))
+                                          && cur.get(j).optString("port", "").equals(entry.optString("port", ""))
+                                          && cur.get(j).optString("type", "").equals(entry.optString("type", ""))) {
+                                      cur.remove(j);
+                                      break;
+                                  }
+                              }
+                              saveProxyList(cur);
+                              Toast.makeText(this, "🗑 پروکسی حذف شد", Toast.LENGTH_SHORT).show();
+                              dialogRef.dismiss();
+                              showProxySettingsDialog();
+                          });
+                          row.addView(label);
+                          row.addView(delBtn);
+                          container.addView(row);
+                      }
+
+                      Button addBtn = createDialogButton("➕ افزودن پروکسی جدید");
+                      addBtn.setOnClickListener(v -> showAddProxyDialog());
+                      container.addView(addBtn);
+
+                      AlertDialog dialog = new AlertDialog.Builder(this)
+                              .setTitle("🌐 تنظیم لیست پروکسی")
+                              .setView(container)
+                              .setPositiveButton("بستن", null)
+                              .create();
+                      dialogRef = dialog;
+                      dialog.show();
+                  } catch (Exception e) {
+                      Toast.makeText(this, "❌ خطا در تنظیمات پروکسی", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void showAddProxyDialog() {
+                  try {
+                      LinearLayout form = new LinearLayout(this);
+                      form.setOrientation(LinearLayout.VERTICAL);
+                      form.setPadding(dp(20), dp(12), dp(20), dp(0));
+
+                      final String[] typeHolder = {"HTTP"};
+                      final Button typeBtn = createDialogButton("نوع پروکسی: HTTP");
+                      typeBtn.setOnClickListener(v -> {
+                          String cur = typeHolder[0];
+                          int next = (java.util.Arrays.asList(PROXY_TYPES).indexOf(cur) + 1) % PROXY_TYPES.length;
+                          typeHolder[0] = PROXY_TYPES[next];
+                          typeBtn.setText("نوع پروکسی: " + PROXY_TYPES[next]);
+                      });
+                      form.addView(typeBtn);
+
+                      final EditText hostInput = new EditText(this);
+                      hostInput.setHint("هاست (مثلاً 127.0.0.1 یا proxy.example.com)");
+                      hostInput.setInputType(InputType.TYPE_CLASS_TEXT);
+                      hostInput.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
+                      form.addView(hostInput);
+
+                      final EditText portInput = new EditText(this);
+                      portInput.setHint("پورت (مثلاً 8080 یا 1080)");
+                      portInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+                      portInput.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
+                      form.addView(portInput);
+
+                      final EditText userInput = new EditText(this);
+                      userInput.setHint("نام کاربری (اختیاری)");
+                      userInput.setInputType(InputType.TYPE_CLASS_TEXT);
+                      userInput.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
+                      form.addView(userInput);
+
+                      final EditText passInput = new EditText(this);
+                      passInput.setHint("رمز عبور (اختیاری)");
+                      passInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                      passInput.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
+                      form.addView(passInput);
+
+                      new AlertDialog.Builder(this)
+                              .setTitle("➕ افزودن پروکسی")
+                              .setView(form)
+                              .setPositiveButton("ذخیره", (d, w) -> {
+                                  String host = hostInput.getText().toString().trim();
+                                  String portStr = portInput.getText().toString().trim();
+                                  if (host.isEmpty() || portStr.isEmpty()) {
+                                      Toast.makeText(this, "⚠️ هاست و پورت الزامی است", Toast.LENGTH_SHORT).show();
+                                      return;
+                                  }
+                                  try {
+                                      JSONObject entry = new JSONObject();
+                                      entry.put("type", typeHolder[0]);
+                                      entry.put("host", host);
+                                      entry.put("port", Integer.parseInt(portStr));
+                                      entry.put("user", userInput.getText().toString().trim());
+                                      entry.put("pass", passInput.getText().toString());
+                                      List<JSONObject> list = getProxyList();
+                                      list.add(entry);
+                                      saveProxyList(list);
+                                      Toast.makeText(this, "✅ پروکسی اضافه شد", Toast.LENGTH_SHORT).show();
+                                      dialogRef.dismiss();
+                                      showProxySettingsDialog();
+                                  } catch (Exception ex) {
+                                      Toast.makeText(this, "❌ پورت نامعتبر است", Toast.LENGTH_SHORT).show();
+                                  }
+                              })
+                              .setNegativeButton("انصراف", null)
+                              .show();
+                  } catch (Exception e) {
+                      Toast.makeText(this, "❌ خطا در افزودن پروکسی", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              // ==========================================
+              // ابزار ۱: مدیریت کد اشتراک الزامی
+              // ==========================================
+              private void showPartnerCodeDialog() {
+                  LinearLayout box = new LinearLayout(this);
+                  box.setOrientation(LinearLayout.VERTICAL);
+                  box.setPadding(dp(20), dp(14), dp(20), dp(8));
+
+                  TextView hint = new TextView(this);
+                  hint.setText("برای فعال‌سازی دکمه ساخت لایسنس، وارد کردن کد اشتراک دریافتی از مدیر (مثلاً SUB-XXXXXX) الزامی است:");
+                  hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                  hint.setPadding(0, 0, 0, dp(10));
+
+                  EditText input = new EditText(this);
+                  input.setHint("SUB-XXXXXX");
+                  input.setText(partnerCode);
+                  input.setSingleLine(true);
+
+                  box.addView(hint);
+                  box.addView(input);
+
+                  new AlertDialog.Builder(this)
+                          .setTitle("🔑 ثبت کد اشتراک (الزامی)")
+                          .setView(box)
+                          .setPositiveButton("بررسی و فعال‌سازی", (d, w) -> {
+                              partnerCode = input.getText().toString().trim().toUpperCase();
+                              prefs.edit().putString(KEY_PARTNER_CODE, partnerCode).apply();
+                              if (partnerCode.isEmpty()) {
+                                  isPartnerValid = false;
+                                  partnerRemaining = 0;
+                                  updateQuotaBadgeUI("🔑 ثبت کد اشتراک (الزامی)", COLOR_WARNING);
+                                  Toast.makeText(this, "⚠️ بدون کد اشتراک امکان ساخت لایسنس وجود ندارد.", Toast.LENGTH_LONG).show();
+                              } else {
+                                  refreshPartnerQuotaSilent();
+                              }
+                          })
+                          .setNegativeButton("بستن", null)
+                          .show();
+              }
+
+              private void refreshPartnerQuotaSilent() {
+                  if (partnerCode == null || partnerCode.isEmpty()) {
+                      isPartnerValid = false;
+                      partnerRemaining = 0;
+                      updateQuotaBadgeUI("🔑 ثبت کد اشتراک (الزامی)", COLOR_WARNING);
                       return;
                   }
-
-                  isLoadingAuth = true;
-                  authBtn.setEnabled(false);
-                  authBtn.setText("⏳ در حال احراز هویت...");
-                  showLoginStatus("🔄 در حال پاک‌سازی نشست قبلی و دریافت اطلاعات لایسنس...", COLOR_CYAN);
-
+                  updateQuotaBadgeUI("⏳ استعلام...", COLOR_TEXT_MUTED);
                   new Thread(() -> {
                       HttpURLConnection conn = null;
                       try {
-                          URL url = new URL(API_GET_LICENSE + Uri.encode(rawKey));
+                          URL url = new URL(PARTNER_STATUS_URL + URLEncoder.encode(partnerCode, "UTF-8"));
                           conn = (HttpURLConnection) url.openConnection();
                           conn.setRequestMethod("GET");
-                          conn.setConnectTimeout(20000);
-                          conn.setReadTimeout(20000);
-                          conn.setRequestProperty("Accept", "application/json");
+                          conn.setConnectTimeout(10000);
+                          conn.setReadTimeout(10000);
 
-                          int httpCode = conn.getResponseCode();
-                          InputStream is = (httpCode >= 200 && httpCode < 400) ? conn.getInputStream() : conn.getErrorStream();
-                          StringBuilder sb = new StringBuilder();
-                          if (is != null) {
-                              try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-                                  String line;
-                                  while ((line = br.readLine()) != null) sb.append(line);
-                              }
-                          }
-
-                          JSONObject body = new JSONObject(sb.toString());
-                          boolean success = (httpCode == 200) && body.optBoolean("success", false);
-
-                          if (success) {
-                              JSONObject dataObj = body.optJSONObject("data");
-                              if (dataObj == null) dataObj = new JSONObject();
-
-                              // استخراج ایمن کوکی‌ها (چه رشته باشد چه آبجکت JSON)
-                              String cookiesStr = "";
-                              Object rawCookies = dataObj.opt("cookies");
-                              if (rawCookies instanceof String) {
-                                  cookiesStr = (String) rawCookies;
-                              } else if (rawCookies instanceof JSONObject) {
-                                  JSONObject cObj = (JSONObject) rawCookies;
-                                  StringBuilder csb = new StringBuilder();
-                                  Iterator<String> keys = cObj.keys();
-                                  while (keys.hasNext()) {
-                                      String k = keys.next();
-                                      if (csb.length() > 0) csb.append("; ");
-                                      csb.append(k).append("=").append(cObj.optString(k, ""));
-                                  }
-                                  cookiesStr = csb.toString();
-                              }
-
-                              // استخراج ایمن LocalStorage
-                              String lsStr = "{}";
-                              Object rawLs = dataObj.opt("local_storage");
-                              if (rawLs instanceof String && !((String) rawLs).trim().isEmpty()) {
-                                  lsStr = (String) rawLs;
-                              } else if (rawLs instanceof JSONObject) {
-                                  lsStr = rawLs.toString();
-                              }
-
-                              final String finalCookies = cookiesStr;
-                              final String finalLs = lsStr;
-
+                          int code = conn.getResponseCode();
+                          if (code == 200) {
+                              BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                              StringBuilder sb = new StringBuilder();
+                              String line;
+                              while ((line = br.readLine()) != null) sb.append(line);
+                              JSONObject obj = new JSONObject(sb.toString());
+                              final String name = obj.optString("name", "همکار");
+                              final int rem = obj.optInt("remaining", 0);
+                              final int lim = obj.optInt("limit", 0);
+                              final boolean active = obj.optBoolean("active", true);
                               mainHandler.post(() -> {
-                                  isLoadingAuth = false;
-                                  authBtn.setEnabled(true);
-                                  authBtn.setText("🔓 ورود و اجرای لایسنس");
-
-                                  activeLicenseKey = rawKey;
-                                  activeCookies = finalCookies;
-                                  activeLocalStorage = finalLs;
-
-                                  saveLicenseToHistory(rawKey);
-                                  refreshRecentLicensesUI();
-                                  showLoginStatus("✅ دسترسی تایید شد؛ در حال باز کردن پورتال تپسی...", COLOR_GREEN);
-
-                                  startPortalSession();
+                                  if (!active) {
+                                      isPartnerValid = false;
+                                      partnerRemaining = 0;
+                                      updateQuotaBadgeUI("🚫 مسدود (" + name + ")", COLOR_ERROR);
+                                  } else if (rem <= 0) {
+                                      isPartnerValid = false;
+                                      partnerRemaining = 0;
+                                      updateQuotaBadgeUI("⚠️ اتمام سهمیه (0/" + lim + ")", COLOR_ERROR);
+                                  } else {
+                                      isPartnerValid = true;
+                                      partnerRemaining = rem;
+                                      updateQuotaBadgeUI("👤 " + name + " | باقی‌مانده: " + rem + "/" + lim, COLOR_PRIMARY);
+                                  }
                               });
                           } else {
-                              String errMsg = body.optString("detail",
-                                      body.optString("message", "لایسنس نامعتبر است یا یافت نشد."));
                               mainHandler.post(() -> {
-                                  isLoadingAuth = false;
-                                  authBtn.setEnabled(true);
-                                  authBtn.setText("🔓 ورود و اجرای لایسنس");
-                                  showLoginStatus("❌ " + errMsg, COLOR_ERROR);
+                                  isPartnerValid = false;
+                                  partnerRemaining = 0;
+                                  updateQuotaBadgeUI("❌ کد اشتراک نامعتبر", COLOR_ERROR);
                               });
                           }
-
                       } catch (Exception e) {
-                          mainHandler.post(() -> {
-                              isLoadingAuth = false;
-                              authBtn.setEnabled(true);
-                              authBtn.setText("🔓 ورود و اجرای لایسنس");
-                              showLoginStatus("❌ خطا در ارتباط با سرور. اتصال اینترنت را بررسی کنید.", COLOR_ERROR);
-                          });
+                          mainHandler.post(() -> updateQuotaBadgeUI("🔑 " + partnerCode, COLOR_CYAN));
                       } finally {
                           if (conn != null) conn.disconnect();
                       }
                   }).start();
               }
 
-              private void startPortalSession() {
-                  deepCleanAllWebData(() -> {
-                      injectCookiesForAllDomains(activeCookies);
-                      portalStatusBadge.setText(CITY_NAMES[selectedCityIndex]);
-                      loginScreen.setVisibility(View.GONE);
-                      portalScreen.setVisibility(View.VISIBLE);
-                      isPortalVisible = true;
-
-                      // تزریق LocalStorage روی دامنه app.tapsi.cab پیش از لود صفحه پروفایل
-                      isBootstrappingStorage = true;
-                      webView.loadUrl(TAPSI_BOOTSTRAP_URL);
-                  });
+              // ==========================================
+              // ابزار ۲: بررسی زنده نشست و تشخیص شماره موبایل
+              // ==========================================
+              private void inspectCurrentSession() {
+                  webView.evaluateJavascript(
+                          "(function() { return JSON.stringify(window.localStorage); })();",
+                          value -> {
+                              String raw = unwrapJsString(value);
+                              if (raw == null || raw.isEmpty() || "{}".equals(raw.trim())) {
+                                  Toast.makeText(this, "⚠️ لوکال‌استورج خالی است؛ هنوز وارد حساب نشده‌اید.", Toast.LENGTH_LONG).show();
+                                  return;
+                              }
+                              try {
+                                  JSONObject obj = new JSONObject(raw);
+                                  int count = obj.length();
+                                  String phone = detectPhoneFromStorage(raw);
+                                  new AlertDialog.Builder(this)
+                                          .setTitle("🔍 وضعیت نشست فعلی اسنپ")
+                                          .setMessage(
+                                                  "📱 شماره تشخیص داده شده: " + phone + "\n\n" +
+                                                  "🗂 تعداد کلیدهای LocalStorage: " + count + "\n\n" +
+                                                  "وضعیت: " + (count > 2 ? "✅ آماده ساخت لایسنس" : "⚠️ اطلاعات ناقص")
+                                          )
+                                          .setPositiveButton("⚡ ساخت لایسنس همین نشست", (d, w) -> extractAndCreateLicense())
+                                          .setNegativeButton("بستن", null)
+                                          .show();
+                              } catch (Exception e) {
+                                  Toast.makeText(this, "❌ خطا در بررسی نشست", Toast.LENGTH_SHORT).show();
+                              }
+                          }
+                  );
               }
 
-              private void forceSyncCurrentAccount() {
-                  Toast.makeText(this, "🔄 در حال پاک‌سازی کش و همگام‌سازی مجدد اکانت...", Toast.LENGTH_SHORT).show();
-                  deepCleanAllWebData(() -> {
-                      injectCookiesForAllDomains(activeCookies);
-                      isBootstrappingStorage = true;
-                      webView.loadUrl(TAPSI_BOOTSTRAP_URL);
-                  });
+              private String detectPhoneFromStorage(String rawStorage) {
+                  if (rawStorage == null) return "نامشخص";
+                  Pattern p = Pattern.compile("(?:\\+98|0098|98|0)?(9\\d{9})\\b");
+                  Matcher m = p.matcher(rawStorage);
+                  if (m.find()) {
+                      return "0" + m.group(1);
+                  }
+                  return "نامشخص";
               }
 
-              private void deepCleanAllWebData(final Runnable onDone) {
+              // ==========================================
+              // ابزار ۳: تاریخچه لایسنس‌های ساخته شده روی گوشی
+              // ==========================================
+              private void saveLicenseToLocalHistory(String licenseKey, String phone) {
                   try {
-                      if (webView != null) {
-                          webView.evaluateJavascript(
-                                  "(function(){"
-                                          + "try{window.localStorage.clear();}catch(e){}"
-                                          + "try{window.sessionStorage.clear();}catch(e){}"
-                                          + "try{if(window.indexedDB&&window.indexedDB.databases){window.indexedDB.databases().then(function(dbs){dbs.forEach(function(db){if(db&&db.name)window.indexedDB.deleteDatabase(db.name);});});}}catch(e){}"
-                                          + "try{if('caches' in window){caches.keys().then(function(n){for(var i=0;i<n.length;i++)caches.delete(n[i]);});}}catch(e){}"
-                                          + "})();",
-                                  null
-                          );
+                      String rawArr = prefs.getString(KEY_LOCAL_HISTORY, "[]");
+                      JSONArray arr = new JSONArray(rawArr);
+                      JSONObject item = new JSONObject();
+                      item.put("license", licenseKey);
+                      item.put("phone", phone != null ? phone : "نامشخص");
+                      item.put("time", new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(new Date()));
+
+                      JSONArray newArr = new JSONArray();
+                      newArr.put(item);
+                      for (int i = 0; i < Math.min(arr.length(), 199); i++) {
+                          newArr.put(arr.getJSONObject(i));
+                      }
+                      prefs.edit().putString(KEY_LOCAL_HISTORY, newArr.toString()).apply();
+                      styleToolChip(historyBtn, "📜 تاریخچه (" + newArr.length() + ")", false);
+                  } catch (Exception ignored) {
+                  }
+              }
+
+              private int getHistoryCount() {
+                  try {
+                      return new JSONArray(prefs.getString(KEY_LOCAL_HISTORY, "[]")).length();
+                  } catch (Exception e) {
+                      return 0;
+                  }
+              }
+
+              private void showHistoryDialog() {
+                  try {
+                      JSONArray arr = new JSONArray(prefs.getString(KEY_LOCAL_HISTORY, "[]"));
+                      if (arr.length() == 0) {
+                          Toast.makeText(this, "📭 هنوز هیچ لایسنسی در تاریخچه گوشی ثبت نشده است.", Toast.LENGTH_SHORT).show();
+                          return;
+                      }
+
+                      StringBuilder sb = new StringBuilder();
+                      for (int i = 0; i < arr.length(); i++) {
+                          JSONObject o = arr.getJSONObject(i);
+                          sb.append(i + 1)
+                                  .append(". ")
+                                  .append(o.optString("phone", "نامشخص"))
+                                  .append("  ➔  ")
+                                  .append(o.optString("license"))
+                                  .append("\n   ⏰ ")
+                                  .append(o.optString("time"))
+                                  .append("\n────────────────────\n");
+                      }
+                      final String allText = sb.toString();
+
+                      ScrollView sv = new ScrollView(this);
+                      TextView tv = new TextView(this);
+                      tv.setText(allText);
+                      tv.setTextIsSelectable(true);
+                      tv.setTypeface(Typeface.MONOSPACE);
+                      tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                      tv.setPadding(dp(18), dp(12), dp(18), dp(12));
+                      sv.addView(tv);
+
+                      new AlertDialog.Builder(this)
+                              .setTitle("📜 تاریخچه لایسنس‌های شما (" + arr.length() + " مورد)")
+                              .setView(sv)
+                              .setPositiveButton("📋 کپی همه لایسنس‌ها", (d, w) -> {
+                                  ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                                  cb.setPrimaryClip(ClipData.newPlainText("Snapp History", allText));
+                                  Toast.makeText(this, "✅ تمام لیست تاریخچه کپی شد!", Toast.LENGTH_SHORT).show();
+                              })
+                              .setNeutralButton("📤 اشتراک‌گذاری", (d, w) -> {
+                                  Intent sendIntent = new Intent(Intent.ACTION_SEND);
+                                  sendIntent.putExtra(Intent.EXTRA_TEXT, allText);
+                                  sendIntent.setType("text/plain");
+                                  startActivity(Intent.createChooser(sendIntent, "ارسال لیست لایسنس‌ها"));
+                              })
+                              .setNegativeButton("🗑 پاک کردن تاریخچه", (d, w) -> {
+                                  prefs.edit().putString(KEY_LOCAL_HISTORY, "[]").apply();
+                                  styleToolChip(historyBtn, "📜 تاریخچه (0)", false);
+                                  Toast.makeText(this, "🧹 تاریخچه پاک شد", Toast.LENGTH_SHORT).show();
+                              })
+                              .show();
+
+                  } catch (Exception e) {
+                      Toast.makeText(this, "❌ خطا در نمایش تاریخچه", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              // ==========================================
+              // استخراج فقط LocalStorage مشروط به ثبت کد اشتراک معتبر
+              // ==========================================
+              private void extractAndCreateLicense() {
+                  // ۱. جلوگیری کامل از ساخت لایسنس در صورت وارد نکردن کد اشتراک
+                  if (partnerCode == null || partnerCode.trim().isEmpty()) {
+                      updateStatusBadge("⛔️ کد اشتراک ثبت نشده است", COLOR_ERROR);
+                      Toast.makeText(this, "⛔️ ابتدا کد اشتراک خود را وارد کنید!", Toast.LENGTH_LONG).show();
+                      showPartnerCodeDialog();
+                      return;
+                  }
+
+                  updateStatusBadge("⏳ در حال استخراج لوکال‌استورج...", COLOR_WARNING);
+                  resultCard.setVisibility(View.GONE);
+                  lastLicenseKey = null;
+
+                  String currentUrl = webView.getUrl() != null ? webView.getUrl() : "";
+
+                  if (currentUrl.isEmpty() || !currentUrl.contains("snapp.taxi")) {
+                      updateStatusBadge("❌ خارج از اسنپ", COLOR_ERROR);
+                      showResultCard(
+                              "❌ خطا در استخراج",
+                              "ابتدا وارد اسنپ شوید",
+                              "لطفاً ابتدا وارد صفحه https://app.snapp.taxi/?superapp_service=menu شوید.",
+                              COLOR_ERROR,
+                              false
+                      );
+                      return;
+                  }
+
+                  webView.evaluateJavascript(
+                          "(function() { return JSON.stringify(window.localStorage); })();",
+                          value -> {
+                              try {
+                                  String localStorageData = unwrapJsString(value);
+                                  if (localStorageData == null || localStorageData.trim().isEmpty() || "{}".equals(localStorageData.trim())) {
+                                      updateStatusBadge("❌ لوکال‌استورج خالی است", COLOR_ERROR);
+                                      showResultCard(
+                                              "❌ اطلاعات لوکال‌استورج یافت نشد!",
+                                              "نشست یافت نشد",
+                                              "ابتدا وارد حساب اسنپ خود شوید تا داده‌های نشست در LocalStorage ذخیره شوند، سپس دکمه ساخت لایسنس را بزنید.",
+                                              COLOR_ERROR,
+                                              false
+                                      );
+                                      return;
+                                  }
+
+                                  lastDetectedPhone = detectPhoneFromStorage(localStorageData);
+
+                                  JSONObject payload = new JSONObject();
+                                  payload.put("cookies", "empty");
+                                  payload.put("local_storage", localStorageData);
+                                  payload.put("phone_number", lastDetectedPhone);
+                                  payload.put("partner_code", partnerCode.trim().toUpperCase());
+
+                                  updateStatusBadge("⏳ در حال صدور لایسنس Snapp...", COLOR_WARNING);
+                                  extractBtn.setEnabled(false);
+                                  extractBtn.setText("⏳ در حال دریافت...");
+
+                                  sendLicenseRequest(payload.toString(), API_URL, true);
+
+                              } catch (Exception err) {
+                                  extractBtn.setEnabled(true);
+                                  extractBtn.setText("⚡ ساخت لایسنس Snapp");
+                                  updateStatusBadge("❌ خطای سیستمی", COLOR_ERROR);
+                                  showResultCard("❌ خطای سیستمی", "", err.getMessage(), COLOR_ERROR, false);
+                              }
+                          }
+                  );
+              }
+
+              private void sendLicenseRequest(final String jsonBody, final String targetUrl, final boolean allowFallback) {
+                  new Thread(() -> {
+                      HttpURLConnection conn = null;
+                      try {
+                          URL url = new URL(targetUrl);
+                          JSONObject proxyEntry = pickNextProxyForLicense();
+                          if (proxyEntry != null) {
+                              applyProxyAuth(proxyEntry);
+                              conn = (HttpURLConnection) url.openConnection(buildProxyFromEntry(proxyEntry));
+                          } else {
+                              conn = (HttpURLConnection) url.openConnection();
+                          }
+                          conn.setRequestMethod("POST");
+                          conn.setConnectTimeout(20000);
+                          conn.setReadTimeout(20000);
+                          conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                          conn.setRequestProperty("Accept", "application/json");
+                          conn.setDoOutput(true);
+
+                          byte[] input = jsonBody.getBytes(StandardCharsets.UTF_8);
+                          try (OutputStream os = conn.getOutputStream()) {
+                              os.write(input, 0, input.length);
+                          }
+
+                          int code = conn.getResponseCode();
+                          if (code == 404 && allowFallback) {
+                              conn.disconnect();
+                              sendLicenseRequest(jsonBody, FALLBACK_API_URL, false);
+                              return;
+                          }
+
+                          InputStream is = (code >= 200 && code < 400) ? conn.getInputStream() : conn.getErrorStream();
+                          StringBuilder responseText = new StringBuilder();
+                          if (is != null) {
+                              try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                                  String line;
+                                  while ((line = br.readLine()) != null) {
+                                      responseText.append(line);
+                                  }
+                              }
+                          }
+
+                          JSONObject data = new JSONObject(responseText.toString());
+                          final boolean isOk = (code >= 200 && code < 300) && data.optBoolean("success", false);
+
+                          mainHandler.post(() -> {
+                              extractBtn.setEnabled(true);
+                              extractBtn.setText("⚡ ساخت لایسنس Snapp");
+
+                              if (isOk) {
+                                  String rawKey = data.optString("license_key", "");
+                                  if (rawKey.toUpperCase().startsWith("TAPSI-") || rawKey.toUpperCase().startsWith("SNAPP-")) {
+                                      rawKey = "Snapp-" + rawKey.substring(6);
+                                  }
+                                  lastLicenseKey = rawKey;
+                                  String srvPhone = data.optString("phone_number", lastDetectedPhone);
+                                  int rem = data.optInt("quota_remaining", -1);
+                                  int lim = data.optInt("quota_limit", 0);
+                                  String pname = data.optString("partner_name", "");
+
+                                  if (lim > 0) {
+                                      isPartnerValid = rem > 0;
+                                      partnerRemaining = rem;
+                                      updateQuotaBadgeUI("👤 " + pname + " | باقی‌مانده: " + rem + "/" + lim, rem > 0 ? COLOR_PRIMARY : COLOR_WARNING);
+                                  }
+
+                                  saveLicenseToLocalHistory(lastLicenseKey, srvPhone);
+
+                                  String metaInfo = "📱 شماره: " + srvPhone + (lim > 0 ? "  •  🎯 سهمیه باقی‌مانده: " + rem + " از " + lim : "");
+                                  updateStatusBadge("✅ لایسنس صادر شد", COLOR_PRIMARY);
+                                  showResultCard("✅ لایسنس با موفقیت ساخته شد", metaInfo, lastLicenseKey, COLOR_PRIMARY, true);
+
+                                  if (isAutoCopy) {
+                                      copyLicenseKey();
+                                  }
+                              } else {
+                                  String detail = data.optString("detail", "کد اشتراک نامعتبر است یا سهمیه شما به پایان رسیده است.");
+                                  updateStatusBadge("⛔️ عدم صدور لایسنس", COLOR_ERROR);
+                                  showResultCard("⛔️ عدم صدور لایسنس", "پیام سرور:", detail, COLOR_ERROR, false);
+                                  refreshPartnerQuotaSilent();
+                              }
+                          });
+
+                      } catch (Exception err) {
+                          mainHandler.post(() -> {
+                              extractBtn.setEnabled(true);
+                              extractBtn.setText("⚡ ساخت لایسنس Snapp");
+                              updateStatusBadge("❌ خطای ارتباط", COLOR_ERROR);
+                              showResultCard("❌ خطای ارتباط با سرور", "", err.getMessage(), COLOR_ERROR, false);
+                          });
+                      } finally {
+                          if (conn != null) {
+                              conn.disconnect();
+                          }
+                      }
+                  }).start();
+              }
+
+              private void copyLicenseKey() {
+                  if (lastLicenseKey != null && !lastLicenseKey.isEmpty()) {
+                      ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                      ClipData clip = ClipData.newPlainText("Snapp License Key", lastLicenseKey);
+                      clipboard.setPrimaryClip(clip);
+                      Toast.makeText(this, "✅ کلید لایسنس کپی شد!", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              private void shareSingleLicense() {
+                  if (lastLicenseKey != null && !lastLicenseKey.isEmpty()) {
+                      String shareText = "📱 شماره: " + lastDetectedPhone + "\n🔑 لایسنس: " + lastLicenseKey;
+                      Intent sendIntent = new Intent(Intent.ACTION_SEND);
+                      sendIntent.putExtra(Intent.EXTRA_TEXT, shareText);
+                      sendIntent.setType("text/plain");
+                      startActivity(Intent.createChooser(sendIntent, "اشتراک‌گذاری لایسنس"));
+                  }
+              }
+
+              private void performDeepClean() {
+                  updateStatusBadge("🧹 در حال پاک‌سازی...", COLOR_WARNING);
+                  resultCard.setVisibility(View.GONE);
+
+                  try {
+                      lastLicenseKey = null;
+
+                      webView.evaluateJavascript(
+                              "(function() { try { window.localStorage.clear(); window.sessionStorage.clear(); } catch(e) {} })();",
+                              null
+                      );
+
+                      WebStorage.getInstance().deleteAllData();
+
+                      CookieManager cookieManager = CookieManager.getInstance();
+                      cookieManager.removeAllCookies(value -> {
+                          cookieManager.flush();
                           webView.clearCache(true);
                           webView.clearFormData();
                           webView.clearHistory();
-                      }
-                      WebStorage.getInstance().deleteAllData();
+                          webView.loadUrl(SNAPP_START_URL);
 
-                      CookieManager cm = CookieManager.getInstance();
-                      cm.removeAllCookies(value -> {
-                          cm.flush();
-                          if (onDone != null) mainHandler.post(onDone);
+                          updateStatusBadge("آماده ورود با شماره جدید", COLOR_TEXT_MUTED);
+                          Toast.makeText(this, "✅ مرورگر پاک‌سازی شد؛ آماده ورود با شماره جدید", Toast.LENGTH_SHORT).show();
                       });
-                  } catch (Exception e) {
-                      if (onDone != null) mainHandler.post(onDone);
+
+                  } catch (Exception err) {
+                      updateStatusBadge("❌ خطا در پاک‌سازی", COLOR_ERROR);
                   }
               }
 
-              private void injectCookiesForAllDomains(String cookiesStr) {
-                  if (cookiesStr == null || cookiesStr.trim().isEmpty() || "empty".equalsIgnoreCase(cookiesStr.trim())) {
-                      return;
-                  }
-                  CookieManager cm = CookieManager.getInstance();
-                  String[] parts = cookiesStr.split(";");
-
-                  for (String domain : TARGET_DOMAINS) {
-                      String host = domain.startsWith(".") ? domain.substring(1) : domain;
-                      String baseUrl = "https://" + host;
-                      for (String part : parts) {
-                          String trimmed = part.trim();
-                          if (trimmed.isEmpty()) continue;
-                          int eqIdx = trimmed.indexOf('=');
-                          if (eqIdx <= 0) continue;
-
-                          String name = trimmed.substring(0, eqIdx).trim();
-                          String value = trimmed.substring(eqIdx + 1).trim();
-                          if (RESERVED_COOKIE_ATTRS.contains(name.toLowerCase())) continue;
-
-                          String cookieHeader = name + "=" + value + "; Domain=" + domain + "; Path=/; Secure";
-                          cm.setCookie(baseUrl, cookieHeader);
-                      }
-                  }
-                  cm.flush();
+              private void updateStatusBadge(String text, String colorHex) {
+                  statusBadge.setText(text);
+                  statusBadge.setTextColor(Color.parseColor(colorHex));
               }
 
-              /**
-               * تزریق LocalStorage اکانت روی app.tapsi.cab پیش از اجرای اپلیکیشن اصلی
-               */
-              private String buildCabLocalStorageBootstrapScript() {
-                  String safeJson = JSONObject.quote(activeLocalStorage != null ? activeLocalStorage : "{}");
-                  String safeLic = JSONObject.quote(activeLicenseKey);
-                  return "(function(){"
-                          + "try{"
-                          + "window.localStorage.clear();"
-                          + "window.sessionStorage.setItem('__tapsi_cab_init_'+" + safeLic + ",'1');"
-                          + "var data=JSON.parse(" + safeJson + ");"
-                          + "if(data&&typeof data==='object'){"
-                          + "for(var k in data){if(Object.prototype.hasOwnProperty.call(data,k)){"
-                          + "window.localStorage.setItem(k,typeof data[k]==='string'?data[k]:JSON.stringify(data[k]));"
-                          + "}}"
-                          + "}"
-                          + "}catch(e){}"
-                          + "})();";
-              }
-
-              /**
-               * اسکریپت زمان اجرا:
-               * 1. روی tapsi.markets فقط یک بار LocalStorage قبلی را پاک می‌کند تا SSO بدون تداخل اجرا شود.
-               * 2. Fallback موقعیت مکانی (GPS) را تزریق می‌کند تا دکمه «موقعیت من» روی نقشه معطل نماند.
-               */
-              private String buildRuntimeInjectionScript() {
-                  String safeLic = JSONObject.quote(activeLicenseKey);
-                  return "(function(){"
-                          + "try{"
-                          + "var host=window.location.hostname||'';"
-                          + "var lic=" + safeLic + ";"
-                          + "if(host.indexOf('tapsi.markets')!==-1||host.indexOf('tapsi.shop')!==-1){"
-                          + "var mk='__tapsi_market_init_'+lic;"
-                          + "if(window.sessionStorage.getItem(mk)!=='1'){"
-                          + "window.localStorage.clear();"
-                          + "window.sessionStorage.setItem(mk,'1');"
-                          + "}"
-                          + "}"
-                          + "}catch(e){}"
-                          + "try{"
-                          + "window.__tapsiFallbackLat=" + fallbackLat + ";"
-                          + "window.__tapsiFallbackLng=" + fallbackLng + ";"
-                          + "if(navigator.geolocation&&!navigator.geolocation.__tapsiPatched){"
-                          + "var orig=navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);"
-                          + "navigator.geolocation.__tapsiPatched=true;"
-                          + "navigator.geolocation.getCurrentPosition=function(success,error,options){"
-                          + "var resolved=false;"
-                          + "var timer=setTimeout(function(){"
-                          + "if(!resolved&&success){resolved=true;success({coords:{latitude:window.__tapsiFallbackLat,longitude:window.__tapsiFallbackLng,accuracy:15,altitude:null,altitudeAccuracy:null,heading:null,speed:null},timestamp:Date.now()});}"
-                          + "},2500);"
-                          + "orig(function(pos){if(!resolved){resolved=true;clearTimeout(timer);if(success)success(pos);}},"
-                          + "function(err){if(!resolved){resolved=true;clearTimeout(timer);if(success){success({coords:{latitude:window.__tapsiFallbackLat,longitude:window.__tapsiFallbackLng,accuracy:15,altitude:null,altitudeAccuracy:null,heading:null,speed:null},timestamp:Date.now()});}else if(error){error(err);}}},"
-                          + "{enableHighAccuracy:true,timeout:2200,maximumAge:0});"
-                          + "};"
-                          + "}"
-                          + "}catch(e){}"
-                          + "})();";
-              }
-
-              // =========================================================================
-              // انتخاب شهر نقشه و خروج از نشست
-              // =========================================================================
-              private void showLocationPickerDialog() {
-                  new AlertDialog.Builder(this)
-                          .setTitle("📍 انتخاب شهر پیش‌فرض نقشه")
-                          .setSingleChoiceItems(CITY_NAMES, selectedCityIndex, (dialog, which) -> {
-                              selectedCityIndex = which;
-                              fallbackLat = CITY_LATS[which];
-                              fallbackLng = CITY_LNGS[which];
-                              portalStatusBadge.setText(CITY_NAMES[which]);
-                              if (webView != null) {
-                                  webView.evaluateJavascript(
-                                          "window.__tapsiFallbackLat=" + fallbackLat + ";window.__tapsiFallbackLng=" + fallbackLng + ";",
-                                          null
-                                  );
-                              }
-                              Toast.makeText(this, "موقعیت روی «" + CITY_NAMES[which] + "» تنظیم شد", Toast.LENGTH_SHORT).show();
-                              dialog.dismiss();
-                          })
-                          .setNegativeButton("بستن", null)
-                          .show();
-              }
-
-              private void confirmAndResetSession() {
-                  new AlertDialog.Builder(this)
-                          .setTitle("🚪 خروج و پاک‌سازی نشست")
-                          .setMessage("تمامی کوکی‌ها و اطلاعات حساب فعلی تپسی و سوپرمارکت پاک شده و به صفحه ورود لایسنس بازمی‌گردید. ادامه می‌دهید؟")
-                          .setPositiveButton("بله، خروج", (d, w) -> {
-                              deepCleanAllWebData(() -> {
-                                  isPortalVisible = false;
-                                  portalScreen.setVisibility(View.GONE);
-                                  loginScreen.setVisibility(View.VISIBLE);
-                                  loginStatusView.setVisibility(View.GONE);
-                                  webView.loadUrl("about:blank");
-                                  Toast.makeText(this, "✅ نشست با موفقیت پاک‌سازی شد", Toast.LENGTH_SHORT).show();
-                              });
-                          })
-                          .setNegativeButton("انصراف", null)
-                          .show();
-              }
-
-              // =========================================================================
-              // مدیریت تاریخچه لایسنس‌های اخیر و ابزارهای کمکی
-              // =========================================================================
-              private void saveLicenseToHistory(String key) {
-                  try {
-                      JSONArray arr = new JSONArray(prefs.getString(KEY_SAVED_LICENSES, "[]"));
-                      JSONArray updated = new JSONArray();
-                      updated.put(key);
-                      for (int i = 0; i < arr.length() && updated.length() < 10; i++) {
-                          String existing = arr.optString(i, "");
-                          if (!existing.isEmpty() && !existing.equalsIgnoreCase(key)) {
-                              updated.put(existing);
-                          }
-                      }
-                      prefs.edit().putString(KEY_SAVED_LICENSES, updated.toString()).apply();
-                  } catch (Exception ignored) {
-                  }
-              }
-
-              private void removeLicenseFromHistory(String key) {
-                  try {
-                      JSONArray arr = new JSONArray(prefs.getString(KEY_SAVED_LICENSES, "[]"));
-                      JSONArray updated = new JSONArray();
-                      for (int i = 0; i < arr.length(); i++) {
-                          String existing = arr.optString(i, "");
-                          if (!existing.isEmpty() && !existing.equalsIgnoreCase(key)) {
-                              updated.put(existing);
-                          }
-                      }
-                      prefs.edit().putString(KEY_SAVED_LICENSES, updated.toString()).apply();
-                  } catch (Exception ignored) {
-                  }
-              }
-
-              private void refreshRecentLicensesUI() {
-                  recentListContainer.removeAllViews();
-                  try {
-                      JSONArray arr = new JSONArray(prefs.getString(KEY_SAVED_LICENSES, "[]"));
-                      if (arr.length() == 0) {
-                          recentSection.setVisibility(View.GONE);
-                          return;
-                      }
-                      recentSection.setVisibility(View.VISIBLE);
-
-                      for (int i = 0; i < arr.length(); i++) {
-                          final String key = arr.optString(i, "");
-                          if (key.isEmpty()) continue;
-
-                          LinearLayout row = new LinearLayout(this);
-                          row.setOrientation(LinearLayout.HORIZONTAL);
-                          row.setGravity(Gravity.CENTER_VERTICAL);
-                          GradientDrawable rowBg = new GradientDrawable();
-                          rowBg.setColor(Color.parseColor(COLOR_BG));
-                          rowBg.setCornerRadius(dp(10));
-                          rowBg.setStroke(dp(1), Color.parseColor(COLOR_BORDER));
-                          row.setBackground(rowBg);
-                          row.setPadding(dp(12), dp(8), dp(10), dp(8));
-                          LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
-                                  ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                          rlp.setMargins(0, 0, 0, dp(6));
-                          row.setLayoutParams(rlp);
-
-                          TextView keyTv = new TextView(this);
-                          keyTv.setText("🔑 " + key);
-                          keyTv.setTextColor(Color.parseColor(COLOR_TEXT));
-                          keyTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                          keyTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-                          keyTv.setSingleLine(true);
-                          keyTv.setEllipsize(TextUtils.TruncateAt.END);
-                          keyTv.setLayoutParams(new LinearLayout.LayoutParams(
-                                  0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                          keyTv.setOnClickListener(v -> {
-                              licenseInput.setText(key);
-                              authenticateLicense(key);
-                          });
-
-                          TextView delTv = new TextView(this);
-                          delTv.setText("✕");
-                          delTv.setTextColor(Color.parseColor(COLOR_MUTED));
-                          delTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-                          delTv.setPadding(dp(10), dp(2), dp(4), dp(2));
-                          delTv.setOnClickListener(v -> {
-                              removeLicenseFromHistory(key);
-                              refreshRecentLicensesUI();
-                          });
-
-                          row.addView(keyTv);
-                          row.addView(delTv);
-                          recentListContainer.addView(row);
-                      }
-                  } catch (Exception e) {
-                      recentSection.setVisibility(View.GONE);
-                  }
-              }
-
-              private void pasteFromClipboard() {
-                  ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                  if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0) {
-                      CharSequence text = cm.getPrimaryClip().getItemAt(0).coerceToText(this);
-                      if (text != null && !text.toString().trim().isEmpty()) {
-                          licenseInput.setText(text.toString().trim());
-                          return;
-                      }
-                  }
-                  Toast.makeText(this, "کلیپ‌بورد خالی است", Toast.LENGTH_SHORT).show();
-              }
-
-              private void showLoginStatus(String msg, String colorHex) {
-                  loginStatusView.setText(msg);
-                  loginStatusView.setTextColor(Color.parseColor(colorHex));
+              private void updateQuotaBadgeUI(String text, String colorHex) {
+                  quotaBadgeView.setText(text);
+                  quotaBadgeView.setTextColor(Color.parseColor(colorHex));
                   GradientDrawable bg = new GradientDrawable();
-                  bg.setColor(Color.parseColor(COLOR_BG));
-                  bg.setCornerRadius(dp(10));
+                  bg.setColor(Color.parseColor(COLOR_BG_SURFACE));
+                  bg.setCornerRadius(dp(12));
                   bg.setStroke(dp(1), Color.parseColor(colorHex));
-                  loginStatusView.setBackground(bg);
-                  loginStatusView.setVisibility(View.VISIBLE);
+                  quotaBadgeView.setBackground(bg);
               }
 
-              private Button createMainButton(String text, String bgHex, String textHex, String strokeHex) {
+              private void showResultCard(String title, String metaText, String content, String contentColorHex, boolean showLicenseActions) {
+                  resultTitleView.setText(title);
+                  if (metaText != null && !metaText.isEmpty()) {
+                      resultMetaView.setText(metaText);
+                      resultMetaView.setVisibility(View.VISIBLE);
+                  } else {
+                      resultMetaView.setVisibility(View.GONE);
+                  }
+                  licenseValueView.setText(content != null ? content : "");
+                  licenseValueView.setTextColor(Color.parseColor(contentColorHex));
+
+                  copyLicenseBtn.setVisibility(showLicenseActions ? View.VISIBLE : View.GONE);
+                  shareLicenseBtn.setVisibility(showLicenseActions ? View.VISIBLE : View.GONE);
+                  copyActionsRow.setVisibility(showLicenseActions ? View.VISIBLE : View.GONE);
+
+                  resultCard.setVisibility(View.VISIBLE);
+              }
+
+              private String unwrapJsString(String value) {
+                  if (value == null || "null".equals(value)) {
+                      return "{}";
+                  }
+                  try {
+                      Object tok = new JSONTokener(value).nextValue();
+                      return tok != null ? tok.toString() : "{}";
+                  } catch (Exception e) {
+                      return "{}";
+                  }
+              }
+
+              private Button createActionButton(String text, String bgHex, String textHex, String strokeHex) {
                   Button btn = new Button(this);
                   btn.setText(text);
                   btn.setAllCaps(false);
                   btn.setTextColor(Color.parseColor(textHex));
-                  btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                  btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
                   btn.setTypeface(Typeface.DEFAULT_BOLD);
+                  btn.setSingleLine(true);
+
                   GradientDrawable bg = new GradientDrawable();
                   bg.setColor(Color.parseColor(bgHex));
-                  bg.setCornerRadius(dp(14));
-                  if (strokeHex != null) bg.setStroke(dp(1), Color.parseColor(strokeHex));
+                  bg.setCornerRadius(dp(11));
+                  if (strokeHex != null) {
+                      bg.setStroke(dp(1), Color.parseColor(strokeHex));
+                  }
                   btn.setBackground(bg);
+                  btn.setPadding(dp(8), 0, dp(8), 0);
                   return btn;
               }
 
-              private Button createPillButton(String text, String bgHex, String textHex, String strokeHex) {
+              private Button createDialogButton(String text) {
                   Button btn = new Button(this);
-                  btn.setText(text);
                   btn.setAllCaps(false);
-                  btn.setTextColor(Color.parseColor(textHex));
-                  btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-                  GradientDrawable bg = new GradientDrawable();
-                  bg.setColor(Color.parseColor(bgHex));
-                  bg.setCornerRadius(dp(8));
-                  if (strokeHex != null) bg.setStroke(dp(1), Color.parseColor(strokeHex));
-                  btn.setBackground(bg);
-                  btn.setPadding(dp(8), dp(4), dp(8), dp(4));
+                  btn.setText(text);
+                  btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                  btn.setTextColor(Color.parseColor(COLOR_TEXT_MAIN));
                   btn.setMinHeight(0);
                   btn.setMinimumHeight(0);
                   btn.setMinWidth(0);
                   btn.setMinimumWidth(0);
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT, dp(40));
+                  lp.setMargins(0, dp(6), 0, 0);
+                  btn.setLayoutParams(lp);
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(Color.parseColor(COLOR_BG_CARD));
+                  bg.setCornerRadius(dp(10));
+                  btn.setBackground(bg);
                   return btn;
+              }
+
+              private Button createToolChip(String text, boolean active) {
+                  Button btn = new Button(this);
+                  btn.setAllCaps(false);
+                  btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                  btn.setSingleLine(true);
+                  btn.setMinHeight(0);
+                  btn.setMinimumHeight(0);
+                  btn.setMinWidth(0);
+                  btn.setMinimumWidth(0);
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.WRAP_CONTENT, dp(32));
+                  lp.setMargins(0, 0, dp(6), 0);
+                  btn.setLayoutParams(lp);
+                  btn.setPadding(dp(12), 0, dp(12), 0);
+                  styleToolChip(btn, text, active);
+                  return btn;
+              }
+
+              private void styleToolChip(Button btn, String text, boolean active) {
+                  btn.setText(text);
+                  btn.setTextColor(Color.parseColor(active ? COLOR_PRIMARY : COLOR_TEXT_MAIN));
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(Color.parseColor(active ? "#064E3B" : COLOR_BG_CARD));
+                  bg.setCornerRadius(dp(16));
+                  bg.setStroke(dp(1), Color.parseColor(active ? COLOR_PRIMARY : COLOR_BORDER));
+                  btn.setBackground(bg);
               }
 
               private int dp(int value) {
@@ -1142,19 +1486,17 @@ jobs:
                           requestPermissions(new String[]{
                                   Manifest.permission.ACCESS_FINE_LOCATION,
                                   Manifest.permission.ACCESS_COARSE_LOCATION
-                          }, 1002);
+                          }, 1001);
                       }
                   }
               }
 
               @Override
               public void onBackPressed() {
-                  if (isPortalVisible) {
-                      if (webView != null && webView.canGoBack()) {
-                          webView.goBack();
-                      } else {
-                          confirmAndResetSession();
-                      }
+                  if (resultCard != null && resultCard.getVisibility() == View.VISIBLE) {
+                      resultCard.setVisibility(View.GONE);
+                  } else if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
                   } else {
                       super.onBackPressed();
                   }
@@ -1168,19 +1510,19 @@ jobs:
 
       - name: Prepare Output APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk Tapsi-Link-Client-v1.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk Snapp-Studio-Pro-v2.1.apk
 
       - name: Upload APK to Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Tapsi-Link-Client-APK
-          path: Tapsi-Link-Client-v1.0.apk
+          name: Snapp-Studio-Pro-APK
+          path: Snapp-Studio-Pro-v2.1.apk
 
       - name: Create GitHub Release (Optional Direct Download)
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: "Tapsi Link Client APK (Build #${{ github.run_number }})"
-          files: Tapsi-Link-Client-v1.0.apk
+          tag_name: snapp-studio-v2.1.${{ github.run_number }}
+          name: "Snapp Studio Pro APK (Build #${{ github.run_number }})"
+          files: Snapp-Studio-Pro-v2.1.apk
