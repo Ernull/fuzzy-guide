@@ -185,6 +185,7 @@ jobs:
           import android.os.Handler;
           import android.os.Looper;
           import android.os.Message;
+          import android.text.InputType;
           import android.text.TextUtils;
           import android.util.TypedValue;
           import android.view.Gravity;
